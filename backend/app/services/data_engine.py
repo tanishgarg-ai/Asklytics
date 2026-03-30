@@ -29,4 +29,10 @@ def execute_query(workspace_id: str, sql: str) -> list[dict]:
     columns = [desc[0] for desc in result.description]
     rows = result.fetchall()
     
-    return [dict(zip(columns, row)) for row in rows]
+    import math
+    def clean_val(v):
+        if isinstance(v, float) and math.isnan(v):
+            return None
+        return v
+        
+    return [dict(zip(columns, (clean_val(v) for v in row))) for row in rows]

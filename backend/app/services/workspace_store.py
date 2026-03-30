@@ -6,8 +6,10 @@ from datetime import datetime, timedelta, timezone
 from app.db import SessionLocal, Workspace, ShareLink
 from app.services.crypto import encrypt
 
+
 def get_secret_key():
     return os.getenv("SECRET_KEY", "fallback_secret_key_for_dev")
+
 
 def create_workspace(db_url: str) -> Workspace:
     db = SessionLocal()
@@ -28,12 +30,14 @@ def create_workspace(db_url: str) -> Workspace:
     finally:
         db.close()
 
+
 def get_workspace(workspace_id: str) -> Workspace:
     db = SessionLocal()
     try:
         return db.query(Workspace).filter(Workspace.workspace_id == workspace_id).first()
     finally:
         db.close()
+
 
 def update_dashboard(workspace_id: str, charts: list[dict]):
     db = SessionLocal()
@@ -44,6 +48,7 @@ def update_dashboard(workspace_id: str, charts: list[dict]):
             db.commit()
     finally:
         db.close()
+
 
 def append_chat_message(workspace_id: str, role: str, content: str):
     db = SessionLocal()
@@ -57,12 +62,13 @@ def append_chat_message(workspace_id: str, role: str, content: str):
     finally:
         db.close()
 
+
 def create_share_link(workspace_id: str, role: str, expires_in_hours: int) -> str:
     db = SessionLocal()
     try:
         token_id = str(uuid.uuid4())
         expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_in_hours)
-        
+
         new_link = ShareLink(
             token_id=token_id,
             workspace_id=workspace_id,
@@ -72,7 +78,7 @@ def create_share_link(workspace_id: str, role: str, expires_in_hours: int) -> st
         )
         db.add(new_link)
         db.commit()
-        
+
         payload = {
             "workspace_id": workspace_id,
             "role": role,
@@ -84,6 +90,7 @@ def create_share_link(workspace_id: str, role: str, expires_in_hours: int) -> st
     finally:
         db.close()
 
+
 def validate_share_token(token: str) -> tuple[str, str]:
     db = SessionLocal()
     try:
@@ -91,15 +98,25 @@ def validate_share_token(token: str) -> tuple[str, str]:
         workspace_id = payload.get("workspace_id")
         role = payload.get("role")
         token_id = payload.get("token_id")
-        
+
         link = db.query(ShareLink).filter(ShareLink.token_id == token_id).first()
         if not link:
             raise ValueError("Token revoked or invalid")
-            
+
         return workspace_id, role
     except jwt.ExpiredSignatureError:
         raise ValueError("Token expired")
-    except jwt.InvalidTokenError:
         raise ValueError("Invalid token")
+    finally:
+        db.close()
+
+def clear_workspace_state(workspace_id: str):
+    db = SessionLocal()
+    try:
+        workspace = db.query(Workspace).filter(Workspace.workspace_id == workspace_id).first()
+        if workspace:
+            workspace.dashboard_state = "[]"
+            workspace.chat_history = "[]"
+            db.commit()
     finally:
         db.close()

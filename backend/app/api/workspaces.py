@@ -72,8 +72,8 @@ def load_workspace(workspace_id: str, x_workspace_id: Optional[str] = Header(Non
     schema = get_schema(workspace_id)
     return {
         "schema": schema,
-        "dashboard": json.loads(workspace.dashboard_state),
-        "chat_history": json.loads(workspace.chat_history),
+        "dashboard": json.loads(workspace.dashboard_state, parse_constant=lambda c: None),
+        "chat_history": json.loads(workspace.chat_history, parse_constant=lambda c: None),
         "role": role
     }
 
@@ -107,7 +107,7 @@ def chat_generate(workspace_id: str, req: ChatRequest,
     payload = result.get("plotly_json_payload", {})
     sql_used = result.get("generated_sql", "")
 
-    current_charts = json.loads(workspace.dashboard_state)
+    current_charts = json.loads(workspace.dashboard_state, parse_constant=lambda c: None)
     current_charts.append(payload)
     update_dashboard(workspace_id, current_charts)
 
@@ -117,7 +117,7 @@ def chat_generate(workspace_id: str, req: ChatRequest,
     return {
         "plotly_payload": payload,
         "sql_used": sql_used,
-        "chat_history": json.loads(get_workspace(workspace_id).chat_history)
+        "chat_history": json.loads(get_workspace(workspace_id).chat_history, parse_constant=lambda c: None)
     }
 
 
@@ -175,7 +175,7 @@ def update_settings(workspace_id: str, req: WorkspaceUpdate,
         "workspace": {
             "schema": schema,
             "dashboard": payloads,
-            "chat_history": json.loads(get_workspace(workspace_id).chat_history),
+            "chat_history": json.loads(get_workspace(workspace_id).chat_history, parse_constant=lambda c: None),
             "role": "owner"
         }
     }
