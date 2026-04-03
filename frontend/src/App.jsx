@@ -3,12 +3,19 @@ import Dashboard from './components/Dashboard';
 import Navbar from './components/Navbar';
 import SchemaExplorer from './components/SchemaExplorer';
 import ChatPanel from './components/ChatPanel';
+import NarrationOverlay from './components/NarrationOverlay';
 import { useState } from 'react';
+
+const MOCK_NARRATION_STEPS = [
+  { target_id: 'chart_0', text: "Let's begin by looking at the first chart here. This gives us an overview of the primary metric.", duration: 4000 },
+  { target_id: 'chart_1', text: "Moving closely to the next visualization, you can see how the trend changes dynamically.", duration: 4000 }
+];
 
 function AppContent() {
   const { workspaceId, workspace, loading, error, createWorkspace } = useWorkspace();
   const [dbUrl, setDbUrl] = useState('');
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isNarrating, setIsNarrating] = useState(false);
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center text-white">Loading your workspace...</div>;
@@ -43,8 +50,13 @@ function AppContent() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      <Navbar onChatToggle={() => setIsChatOpen(!isChatOpen)} />
+    <div className="flex flex-col h-screen overflow-hidden relative">
+      <NarrationOverlay 
+         steps={MOCK_NARRATION_STEPS} 
+         isPlaying={isNarrating} 
+         onClose={() => setIsNarrating(false)} 
+      />
+      <Navbar onChatToggle={() => setIsChatOpen(!isChatOpen)} onNarrate={() => setIsNarrating(true)} />
       <div className="flex flex-1 overflow-hidden relative">
         <SchemaExplorer />
         <main className="flex-1 overflow-y-auto p-6 relative">

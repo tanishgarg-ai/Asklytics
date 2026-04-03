@@ -12,6 +12,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+
 class Workspace(Base):
     __tablename__ = "workspaces"
 
@@ -21,6 +22,7 @@ class Workspace(Base):
     dashboard_state = Column(String, default="[]")
     chat_history = Column(String, default="[]")
 
+
 class ShareLink(Base):
     __tablename__ = "share_links"
 
@@ -29,5 +31,6 @@ class ShareLink(Base):
     role = Column(String, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     expires_at = Column(DateTime, nullable=False)
+
 
 Base.metadata.create_all(bind=engine)

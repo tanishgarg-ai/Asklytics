@@ -1,13 +1,13 @@
-import { Settings, Share2, MessageSquare } from 'lucide-react';
+import { Settings, Share2, MessageSquare, RefreshCw, PlayCircle } from 'lucide-react';
 import { useState } from 'react';
 import ShareModal from './ShareModal';
 import SettingsModal from './SettingsModal';
 import { useWorkspace } from '../hooks/useWorkspace';
 
-export default function Navbar({ onChatToggle }) {
+export default function Navbar({ onChatToggle, onNarrate }) {
   const [showShare, setShowShare] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const { role } = useWorkspace();
+  const { role, refreshDashboard, loading } = useWorkspace();
 
   return (
     <>
@@ -24,6 +24,25 @@ export default function Navbar({ onChatToggle }) {
           >
             <MessageSquare size={20} />
           </button>
+          
+          <button 
+            onClick={onNarrate}
+            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 rounded-lg transition-colors border border-indigo-500/30"
+            title="Explain Dashboard"
+          >
+            <PlayCircle size={16} /> Narrate
+          </button>
+
+          {(role === 'owner' || role === 'edit') && (
+            <button 
+              onClick={refreshDashboard}
+              disabled={loading}
+              className={`p-2 rounded-lg transition-colors text-gray-300 hover:text-white ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10'}`}
+              title="Sync Data"
+            >
+              <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+            </button>
+          )}
           {role === 'owner' && (
             <>
               <button 

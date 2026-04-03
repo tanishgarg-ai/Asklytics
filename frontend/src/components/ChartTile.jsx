@@ -7,15 +7,30 @@ export default function ChartTile({ payload }) {
     
     useEffect(() => {
       const { width, height, ...restLayout } = payload.layout || {};
+      const isPie = payload.data?.some(d => d.type === 'pie');
+      
+      let shouldShowLegend = true;
+      if (isPie) {
+          const sliceCount = payload.data[0]?.labels?.length || payload.data[0]?.values?.length || 0;
+          shouldShowLegend = sliceCount > 1;
+      } else {
+          shouldShowLegend = payload.data?.length > 1;
+      }
+
+      // Remove the title from the plot itself since it's already in the header
+      const { title, ...layoutWithoutTitle } = restLayout;
+
       setLayout({
-          ...restLayout,
+          ...layoutWithoutTitle,
           autosize: true,
-          margin: { t: 40, r: 20, l: 40, b: 40 },
+          margin: isPie ? { t: 20, r: 10, l: 10, b: 40 } : { t: 20, r: 20, l: 40, b: 40 },
+          showlegend: shouldShowLegend,
+          legend: isPie ? { orientation: 'h', yanchor: 'top', y: -0.1, xanchor: 'center', x: 0.5, ...layoutWithoutTitle.legend } : layoutWithoutTitle.legend,
           paper_bgcolor: 'transparent',
           plot_bgcolor: 'transparent',
           font: { color: '#e2e8f0' }
       });
-    }, [payload.layout]);
+    }, [payload.layout, payload.data]);
 
   return (
     <div className="w-full h-full min-w-[200px] min-h-[200px] bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden flex flex-col shadow-xl group hover:border-white/20 transition-colors resize">
@@ -25,17 +40,15 @@ export default function ChartTile({ payload }) {
           <GripHorizontal size={14} />
         </div>
       </div>
-      <div className="flex-1 w-full relative overflow-x-auto overflow-y-hidden min-h-0">
-        <div style={{ minWidth: '400px', height: '100%', position: 'relative' }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
-            <Plot
-              data={payload.data}
-              layout={layout}
-              useResizeHandler={true}
-              style={{ width: '100%', height: '100%' }}
-              config={{ displayModeBar: false, responsive: true }}
-            />
-          </div>
+      <div className="flex-1 w-full relative overflow-hidden min-h-0 min-w-0">
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <Plot
+            data={payload.data}
+            layout={layout}
+            useResizeHandler={true}
+            style={{ width: '100%', height: '100%' }}
+            config={{ displayModeBar: false, responsive: true }}
+          />
         </div>
       </div>
     </div>

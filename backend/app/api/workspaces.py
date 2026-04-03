@@ -1,7 +1,7 @@
 import json
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from typing import Optional
-from app.models.workspace import WorkspaceCreate, WorkspaceUpdate
+from app.models.workspace import WorkspaceCreate, WorkspaceUpdate, DashboardUpdate
 from app.models.share import ShareLinkCreate
 from app.models.chart import ChatRequest
 from app.services.workspace_store import (
@@ -9,7 +9,7 @@ from app.services.workspace_store import (
     append_chat_message, create_share_link, validate_share_token
 )
 from app.services.ingestor import ingest_from_sql_source
-from app.services.data_engine import get_schema
+from app.services.data_engine import get_schema, execute_and_format_chart
 from app.services.agent.graph import agent_executor
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["workspaces"])
@@ -134,6 +134,58 @@ def get_share_link(workspace_id: str, req: ShareLinkCreate,
     }
 
 
+@router.post("/{workspace_id}/refresh")
+def refresh_dashboard_data(workspace_id: str, x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")):
+    role = get_role(workspace_id, x_workspace_id, None)
+    if role not in ["owner", "edit"]:
+        raise HTTPException(status_code=403, detail="Not authorized to refresh data")
+
+    workspace = get_workspace(workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    current_dashboard = json.loads(workspace.dashboard_state, parse_constant=lambda c: None)
+    payloads = []
+    
+    for chart in current_dashboard:
+        sql = chart.get("_sql")
+        meta = chart.get("_meta")
+        if sql and meta:
+            try:
+                new_payload = execute_and_format_chart(workspace_id, sql, meta)
+                if "grid_layout" in chart:
+                    new_payload["grid_layout"] = chart["grid_layout"]
+                payloads.append(new_payload)
+            except Exception:
+                payloads.append(chart)
+        else:
+            payloads.append(chart)
+
+    update_dashboard(workspace_id, payloads)
+
+    return {
+        "status": "success",
+        "dashboard": payloads
+    }
+
+
+@router.put("/{workspace_id}/dashboard")
+def update_dashboard_layout(workspace_id: str, req: DashboardUpdate,
+                            x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+                            token: Optional[str] = None):
+    role = get_role(workspace_id, x_workspace_id, token)
+    if role not in ["owner", "edit"]:
+        raise HTTPException(status_code=403, detail="Not authorized to edit dashboard")
+    
+    workspace = get_workspace(workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+        
+    update_dashboard(workspace_id, req.dashboard)
+    
+    return {"status": "success"}
+
+
 @router.put("/{workspace_id}/settings")
 def update_settings(workspace_id: str, req: WorkspaceUpdate,
                     x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")):
@@ -158,17 +210,22 @@ def update_settings(workspace_id: str, req: WorkspaceUpdate,
     db.commit()
     db.close()
 
-    initial_state = {
-        "workspace_id": workspace_id,
-        "is_dashboard_init": True,
-        "retry_count": 0
-    }
-    result = agent_executor.invoke(initial_state)
-
-    if result.get("execution_error"):
-        raise HTTPException(status_code=500, detail=f"LLM generated an error regenerating: {result['execution_error']}")
-
-    payloads = result.get("plotly_json_payload", [])
+    current_dashboard = json.loads(workspace.dashboard_state, parse_constant=lambda c: None)
+    payloads = []
+    
+    for chart in current_dashboard:
+        sql = chart.get("_sql")
+        meta = chart.get("_meta")
+        if sql and meta:
+            try:
+                new_payload = execute_and_format_chart(workspace_id, sql, meta)
+                if "grid_layout" in chart:
+                    new_payload["grid_layout"] = chart["grid_layout"]
+                payloads.append(new_payload)
+            except Exception:
+                payloads.append(chart)
+        else:
+            payloads.append(chart)
     update_dashboard(workspace_id, payloads)
 
     return {

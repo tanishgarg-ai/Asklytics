@@ -59,6 +59,10 @@ Orchestrates the LLM to generate SQL, validate against the DB, and construct Plo
 *   `PUT /api/v1/workspaces/{workspace_id}/settings`: Update settings and regenerate.
 
 ## Phase 6: React Frontend
-*   **Design**: Glassmorphic theme (bg-zinc-950, bg-white/10 backdrop-blur-md cards).
-*   **Session Management**: JWT token decoding for share links, localStorage for owner sessions.
-*   **Layout**: `Dashboard` with `react-grid-layout`, `ChartTile` for Plotly charts, `ChatPanel` drawer for interaction, `SchemaExplorer` sidebar.
+*   **Design**: Glassmorphic aesthetic using Tailwind CSS (e.g., `bg-zinc-950` backgrounds, `bg-white/5 backdrop-blur-md` cards).
+*   **Session Management**: JWT token decoding for role-based share links, and `localStorage` for persistent owner sessions.
+*   **Core Components**:
+    *   **Dashboard**: Utilizes `react-grid-layout` mapping the state of widgets on the screen.
+    *   **ChartTile**: Houses the `react-plotly.js` charts as responsive, floating widgets. Employs vanilla CSS resizing (`resize` via Tailwind), flexbox constraints (`min-h-0`), and absolute positioning layers to ensure Plotly SVG charts scale flawlessly in both dimensions without scrollbars. Includes specific optimizations to strip hardcoded dimensions, intelligently hide redundant UI like titles/single-series legends, and vertically align Pie chart legends for optimal container fit.
+    *   **ChatPanel**: A slide-out drawer providing a conversational interface with the LangGraph AI agent to incrementally update dashboard queries.
+    *   **SchemaExplorer**: An interactive sidebar to view the structured schema reflected from the user's database.

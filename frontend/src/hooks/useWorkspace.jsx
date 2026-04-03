@@ -96,6 +96,35 @@ export const WorkspaceProvider = ({ children }) => {
      }
   }
 
+  const updateDashboard = async (newDashboard) => {
+    setWorkspace(prev => ({ ...prev, dashboard: newDashboard }));
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const token = urlParams.get('token');
+      const url = token ? `/workspaces/${workspaceId}/dashboard?token=${token}` : `/workspaces/${workspaceId}/dashboard`;
+      await api.put(url, { dashboard: newDashboard });
+    } catch (err) {
+      console.error("Failed to update dashboard", err);
+    }
+  };
+
+  const refreshDashboard = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const token = urlParams.get('token');
+      const url = token ? `/workspaces/${workspaceId}/refresh?token=${token}` : `/workspaces/${workspaceId}/refresh`;
+      const res = await api.post(url);
+      setWorkspace(prev => ({ ...prev, dashboard: res.data.dashboard }));
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const addChart = (chart) => {
       setWorkspace(prev => ({
           ...prev,
@@ -113,7 +142,7 @@ export const WorkspaceProvider = ({ children }) => {
   return (
     <WorkspaceContext.Provider value={{ 
         workspace, workspaceId, role, loading, error, 
-        createWorkspace, loadWorkspace, updateSettings, addChart, addChatMessage 
+        createWorkspace, loadWorkspace, updateSettings, addChart, addChatMessage, updateDashboard, refreshDashboard 
     }}>
       {children}
     </WorkspaceContext.Provider>

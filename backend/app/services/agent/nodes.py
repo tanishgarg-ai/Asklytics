@@ -1,7 +1,7 @@
 import os
 import json
 from langchain_google_genai import ChatGoogleGenerativeAI
-from app.services.data_engine import get_schema, execute_query
+from app.services.data_engine import get_schema, execute_query, execute_and_format_chart
 from app.services.agent.state import AsklyticState
 
 llm = ChatGoogleGenerativeAI(
@@ -97,57 +97,17 @@ def validator(state: AsklyticState) -> dict:
     if not sqls or not metadatas:
         return {"execution_error": "No SQL or metadata generated."}
         
-    def execute_and_format(sql: str, meta: dict) -> dict:
-        if not sql:
-            raise ValueError("Empty SQL provided.")
-        rows = execute_query(workspace_id, sql)
-        if not rows:
-            raise ValueError(f"No data returned for SQL: {sql}")
-            
-        x_col = meta.get("x_column")
-        y_col = meta.get("y_column")
-        
-        if not rows[0].get(x_col):
-            x_col = list(rows[0].keys())[0] if rows[0] else None
-        if not rows[0].get(y_col):
-            y_col = list(rows[0].keys())[1] if len(rows[0].keys()) > 1 else x_col
-            
-        x_data = [row.get(x_col) for row in rows]
-        y_data = [row.get(y_col) for row in rows]
-        
-        payload = {
-            "data": [{
-                "type": meta.get("chart_type", "bar"),
-                "x": x_data,
-                "y": y_data,
-            }],
-            "layout": {
-                "title": meta.get("title", ""),
-                "xaxis": { "title": x_col },
-                "yaxis": { "title": y_col },
-                "paper_bgcolor": "rgba(0,0,0,0)",
-                "plot_bgcolor": "rgba(0,0,0,0)",
-                "font": { "color": "#ffffff" },
-                "margin": {"b": 40, "l": 40, "r": 20, "t": 50}
-            }
-        }
-        if payload["data"][0]["type"] == "pie":
-            payload["data"][0]["labels"] = payload["data"][0].pop("x")
-            payload["data"][0]["values"] = payload["data"][0].pop("y")
-            
-        return payload
-
     try:
         if is_dashboard_init:
             payloads = []
             for sql, meta in zip(sqls, metadatas):
                 try:
-                    payloads.append(execute_and_format(sql, meta))
+                    payloads.append(execute_and_format_chart(workspace_id, sql, meta))
                 except Exception as inner_e:
                     raise ValueError(f"Batch SQL error: {str(inner_e)}")
             return {"plotly_json_payload": payloads, "execution_error": None}
         else:
-            payload = execute_and_format(sqls, metadatas)
+            payload = execute_and_format_chart(workspace_id, sqls, metadatas)
             return {"plotly_json_payload": payload, "execution_error": None}
             
     except Exception as e:
