@@ -135,7 +135,7 @@ export const WorkspaceProvider = ({ children }) => {
   const addChatMessage = (msg) => {
       setWorkspace(prev => ({
           ...prev,
-          chat_history: [...prev.chat_history, msg]
+          chat_history: [...(prev.chat_history || []), msg]
       }));
   }
 

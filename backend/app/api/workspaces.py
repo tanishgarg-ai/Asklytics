@@ -81,6 +81,7 @@ def create_new_workspace(req: WorkspaceCreate):
         "workspace_id": ws_id,
         "schema": schema,
         "dashboard": payloads,
+        "chat_history": [],
         "narration_steps": result.get("narration_steps", [])
     }
 
@@ -260,7 +261,8 @@ def refresh_dashboard_data(workspace_id: str, x_workspace_id: Optional[str] = He
 
     return {
         "status": "success",
-        "dashboard": payloads
+        "dashboard": payloads,
+        "chat_history": json.loads(workspace.chat_history, parse_constant=lambda c: None)
     }
 
 

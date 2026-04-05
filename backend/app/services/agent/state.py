@@ -22,3 +22,7 @@ class AsklyticState(TypedDict):
     agent_intent: Optional[str]
     agent_message: Optional[str]
     target_chart_index: Optional[int]
+    current_table: Optional[str]
+    transformation_history: List[str]
+    row_count_history: List[int]
+    prep_status: str # pending/success/failed

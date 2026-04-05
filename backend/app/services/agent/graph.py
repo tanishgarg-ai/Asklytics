@@ -1,6 +1,9 @@
 from langgraph.graph import StateGraph, END
 from app.services.agent.state import AsklyticState
-from app.services.agent.nodes import schema_retriever, intent_analyzer, query_generator, validator, reflector, narration_generator
+from app.services.agent.nodes import (
+    schema_retriever, intent_analyzer, query_generator, 
+    validator, reflector, narration_generator, data_prep_node
+)
 
 def route_intent(state: AsklyticState) -> str:
     """
@@ -17,7 +20,7 @@ def route_intent(state: AsklyticState) -> str:
         return END
     elif intent == "explain_existing":
         return "narration_generator"
-    return "query_generator" # generate_new
+    return "data_prep_node" # generate_new (Prep before Gen)
 
 def should_reflect(state: AsklyticState) -> str:
     """
@@ -44,10 +47,12 @@ workflow.add_node("query_generator", query_generator)
 workflow.add_node("validator", validator)
 workflow.add_node("reflector", reflector)
 workflow.add_node("narration_generator", narration_generator)
+workflow.add_node("data_prep_node", data_prep_node)
 
 workflow.set_entry_point("schema_retriever")
 workflow.add_edge("schema_retriever", "intent_analyzer")
 workflow.add_conditional_edges("intent_analyzer", route_intent)
+workflow.add_edge("data_prep_node", "query_generator")
 workflow.add_edge("query_generator", "validator")
 workflow.add_conditional_edges("validator", should_reflect)
 workflow.add_edge("reflector", "query_generator")
