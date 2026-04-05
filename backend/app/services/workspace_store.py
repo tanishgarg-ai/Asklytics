@@ -8,10 +8,25 @@ from app.services.crypto import encrypt
 
 
 def get_secret_key():
+    """
+    Retrieves the secret key used for JWT signing from the environment.
+
+    Returns:
+        str: The secret key string.
+    """
     return os.getenv("SECRET_KEY", "fallback_secret_key_for_dev")
 
 
 def create_workspace(db_url: str) -> Workspace:
+    """
+    Creates a new Workspace record in the database with an encrypted database URL.
+
+    Args:
+        db_url (str): The raw plaintext database connection URL to encrypt and save.
+
+    Returns:
+        Workspace: The newly created Workspace ORM object.
+    """
     db = SessionLocal()
     try:
         workspace_id = str(uuid.uuid4())
@@ -32,6 +47,15 @@ def create_workspace(db_url: str) -> Workspace:
 
 
 def get_workspace(workspace_id: str) -> Workspace:
+    """
+    Retrieves a Workspace record by its unique identifier.
+
+    Args:
+        workspace_id (str): The unique identifier.
+
+    Returns:
+        Workspace: The ORM object if found, otherwise None.
+    """
     db = SessionLocal()
     try:
         return db.query(Workspace).filter(Workspace.workspace_id == workspace_id).first()
@@ -40,6 +64,13 @@ def get_workspace(workspace_id: str) -> Workspace:
 
 
 def update_dashboard(workspace_id: str, charts: list[dict]):
+    """
+    Persists the updated dashboard state (list of charts) for a workspace.
+
+    Args:
+        workspace_id (str): The unique identifier.
+        charts (list[dict]): A list of Plotly chart JSON payloads.
+    """
     db = SessionLocal()
     try:
         workspace = db.query(Workspace).filter(Workspace.workspace_id == workspace_id).first()
@@ -51,6 +82,14 @@ def update_dashboard(workspace_id: str, charts: list[dict]):
 
 
 def append_chat_message(workspace_id: str, role: str, content: str):
+    """
+    Appends a new message to the persistent chat history of the workspace.
+
+    Args:
+        workspace_id (str): The workspace identifier.
+        role (str): The role ('user' or 'assistant').
+        content (str): The text content of the message.
+    """
     db = SessionLocal()
     try:
         workspace = db.query(Workspace).filter(Workspace.workspace_id == workspace_id).first()
@@ -64,6 +103,17 @@ def append_chat_message(workspace_id: str, role: str, content: str):
 
 
 def create_share_link(workspace_id: str, role: str, expires_in_hours: int) -> str:
+    """
+    Generates and saves a shareable link token granting specified access.
+
+    Args:
+        workspace_id (str): The workspace identifier.
+        role (str): The role/permission to grant ('viewer', 'edit', etc.).
+        expires_in_hours (int): The duration until token expiration in hours.
+
+    Returns:
+        str: A signed JWT representing the share link.
+    """
     db = SessionLocal()
     try:
         token_id = str(uuid.uuid4())
@@ -92,6 +142,18 @@ def create_share_link(workspace_id: str, role: str, expires_in_hours: int) -> st
 
 
 def validate_share_token(token: str) -> tuple[str, str]:
+    """
+    Validates a share token and extracts the corresponding workspace ID and role.
+
+    Args:
+        token (str): The JWT share token to validate.
+
+    Returns:
+        tuple[str, str]: A tuple containing the workspace ID and the assigned role.
+
+    Raises:
+        ValueError: If the token is invalid, expired, or revoked.
+    """
     db = SessionLocal()
     try:
         payload = jwt.decode(token, get_secret_key(), algorithms=["HS256"])
@@ -111,6 +173,12 @@ def validate_share_token(token: str) -> tuple[str, str]:
         db.close()
 
 def clear_workspace_state(workspace_id: str):
+    """
+    Resets the workspace dashboard configuration and chat history back to empty arrays.
+
+    Args:
+        workspace_id (str): The workspace to clear.
+    """
     db = SessionLocal()
     try:
         workspace = db.query(Workspace).filter(Workspace.workspace_id == workspace_id).first()

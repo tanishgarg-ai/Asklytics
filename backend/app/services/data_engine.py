@@ -3,11 +3,30 @@ import duckdb
 SESSION_STORES: dict[str, duckdb.DuckDBPyConnection] = {}
 
 def get_or_create_session(workspace_id: str) -> duckdb.DuckDBPyConnection:
+    """
+    Retrieves an existing or creates a new DuckDB connection for a specific workspace.
+
+    Args:
+        workspace_id (str): The unique identifier for the workspace.
+
+    Returns:
+        duckdb.DuckDBPyConnection: The managed DuckDB connection object.
+    """
     if workspace_id not in SESSION_STORES:
         SESSION_STORES[workspace_id] = duckdb.connect(database=':memory:')
     return SESSION_STORES[workspace_id]
 
 def get_schema(workspace_id: str) -> dict[str, list[dict]]:
+    """
+    Retrieves the table schema currently loaded into the DuckDB instance for a workspace.
+
+    Args:
+        workspace_id (str): The unique identifier for the workspace.
+
+    Returns:
+        dict[str, list[dict]]: A dictionary mapping each table name to a list of its columns, 
+            where each column is represented as a dict with 'column' and 'type' keys.
+    """
     conn = get_or_create_session(workspace_id)
     tables_result = conn.execute("SHOW TABLES").fetchall()
     tables = [row[0] for row in tables_result]
@@ -21,6 +40,16 @@ def get_schema(workspace_id: str) -> dict[str, list[dict]]:
     return schema
 
 def execute_query(workspace_id: str, sql: str) -> list[dict]:
+    """
+    Executes a SQL query against the workspace's DuckDB instance.
+
+    Args:
+        workspace_id (str): The unique identifier for the workspace.
+        sql (str): The SQL statement to securely execute.
+
+    Returns:
+        list[dict]: A list of rows represented as dictionaries mapping column names to row values.
+    """
     conn = get_or_create_session(workspace_id)
     result = conn.execute(sql)
     if result.description is None:
@@ -38,6 +67,21 @@ def execute_query(workspace_id: str, sql: str) -> list[dict]:
     return [dict(zip(columns, (clean_val(v) for v in row))) for row in rows]
 
 def execute_and_format_chart(workspace_id: str, sql: str, meta: dict) -> dict:
+    """
+    Executes a query and formats the result into a Plotly-compatible JSON payload.
+
+    Args:
+        workspace_id (str): The unique identifier for the workspace.
+        sql (str): The SQL statement used to retrieve data.
+        meta (dict): Dictionary specifying chart parameters like 'chart_type', 'title', 
+            'x_column', and 'y_column'.
+
+    Returns:
+        dict: A dictionary structure compatible with Plotly.js to render a chart.
+
+    Raises:
+        ValueError: If the SQL string is empty, or if the executed SQL returns no data.
+    """
     if not sql:
         raise ValueError("Empty SQL provided.")
     rows = execute_query(workspace_id, sql)

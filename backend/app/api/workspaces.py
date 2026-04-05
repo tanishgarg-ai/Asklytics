@@ -17,6 +17,20 @@ router = APIRouter(prefix="/api/v1/workspaces", tags=["workspaces"])
 
 def get_role(workspace_id: str, x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
              token: Optional[str] = Query(None)):
+    """
+    Resolves and validates the user's role for a specific workspace.
+
+    Args:
+        workspace_id (str): The workspace to check access for.
+        x_workspace_id (Optional[str]): The workspace owner ID header.
+        token (Optional[str]): A JWT share token, if accessing via a shared link.
+
+    Returns:
+        str: The computed role (e.g., 'owner', 'edit', 'viewer').
+
+    Raises:
+        HTTPException: If authorization fails or the token is invalid.
+    """
     if token:
         try:
             tok_ws_id, role = validate_share_token(token)
@@ -33,6 +47,15 @@ def get_role(workspace_id: str, x_workspace_id: Optional[str] = Header(None, ali
 
 @router.post("")
 def create_new_workspace(req: WorkspaceCreate):
+    """
+    Creates a new workspace, ingests the provided database, and generates an initial dashboard.
+
+    Args:
+        req (WorkspaceCreate): Expected payload containing the database connection URL.
+
+    Returns:
+        dict: Initialization response with workspace_id, schema, dashboard state, and narration steps.
+    """
     workspace = create_workspace(req.db_url)
     ws_id = workspace.workspace_id
 
@@ -57,13 +80,25 @@ def create_new_workspace(req: WorkspaceCreate):
     return {
         "workspace_id": ws_id,
         "schema": schema,
-        "dashboard": payloads
+        "dashboard": payloads,
+        "narration_steps": result.get("narration_steps", [])
     }
 
 
 @router.get("/{workspace_id}")
 def load_workspace(workspace_id: str, x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
                    token: Optional[str] = None):
+    """
+    Loads an existing workspace's schema, dashboard layout, and chat history.
+
+    Args:
+        workspace_id (str): The workspace identifier.
+        x_workspace_id (Optional[str]): The workspace owner ID header.
+        token (Optional[str]): Optional share token for guest access.
+
+    Returns:
+        dict: The workspace state elements.
+    """
     role = get_role(workspace_id, x_workspace_id, token)
     workspace = get_workspace(workspace_id)
     if not workspace:
@@ -81,6 +116,21 @@ def load_workspace(workspace_id: str, x_workspace_id: Optional[str] = Header(Non
 @router.post("/{workspace_id}/chat")
 def chat_generate(workspace_id: str, req: ChatRequest,
                   x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"), token: Optional[str] = None):
+    """
+    Handles a user's natural language chart request against their workspace.
+
+    Depending on the query intent, this uses LLM agents to either generate a new chart
+    via SQL, answer a follow-up question, or narrate an existing chart.
+
+    Args:
+        workspace_id (str): The workspace identifier.
+        req (ChatRequest): The payload containing the user's natural language query.
+        x_workspace_id (Optional[str]): Header for owner validation.
+        token (Optional[str]): Optional share token granting edit access.
+
+    Returns:
+        dict: The updated chat history, the generated plotly payload (if new), and narration.
+    """
     role = get_role(workspace_id, x_workspace_id, token)
     if role not in ["owner", "edit"]:
         raise HTTPException(status_code=403, detail="Upgrade to edit access to interact.")
@@ -91,11 +141,14 @@ def chat_generate(workspace_id: str, req: ChatRequest,
 
     append_chat_message(workspace_id, "user", req.query)
 
+    current_charts = json.loads(workspace.dashboard_state, parse_constant=lambda c: None)
+
     initial_state = {
         "workspace_id": workspace_id,
         "user_query": req.query,
         "is_dashboard_init": False,
-        "retry_count": 0
+        "retry_count": 0,
+        "existing_dashboard": current_charts
     }
     result = agent_executor.invoke(initial_state)
 
@@ -104,26 +157,58 @@ def chat_generate(workspace_id: str, req: ChatRequest,
         append_chat_message(workspace_id, "assistant", f"Sorry, I encountered an error: {error_msg}")
         raise HTTPException(status_code=500, detail=error_msg)
 
-    payload = result.get("plotly_json_payload", {})
-    sql_used = result.get("generated_sql", "")
+    intent = result.get("agent_intent", "generate_new")
+    agent_msg = result.get("agent_message", "")
+    narration_steps = result.get("narration_steps", [])
 
-    current_charts = json.loads(workspace.dashboard_state, parse_constant=lambda c: None)
-    current_charts.append(payload)
-    update_dashboard(workspace_id, current_charts)
+    if intent == "follow_up":
+        append_chat_message(workspace_id, "assistant", agent_msg or "Can you provide more details?")
+        return {
+            "plotly_payload": None,
+            "sql_used": "",
+            "chat_history": json.loads(get_workspace(workspace_id).chat_history, parse_constant=lambda c: None),
+            "narration_steps": []
+        }
+    elif intent == "explain_existing":
+        append_chat_message(workspace_id, "assistant", agent_msg or "I can explain that using an existing chart on the dashboard.")
+        return {
+            "plotly_payload": None,
+            "sql_used": "",
+            "chat_history": json.loads(get_workspace(workspace_id).chat_history, parse_constant=lambda c: None),
+            "narration_steps": narration_steps
+        }
+    else:
+        payload = result.get("plotly_json_payload", {})
+        sql_used = result.get("generated_sql", "")
+        
+        current_charts.append(payload)
+        update_dashboard(workspace_id, current_charts)
 
-    append_chat_message(workspace_id, "assistant",
-                        f"I've added the chart to your dashboard. Query used:\n```sql\n{sql_used}\n```")
+        append_chat_message(workspace_id, "assistant",
+                            f"I've added the chart to your dashboard. Query used:\n```sql\n{sql_used}\n```")
 
-    return {
-        "plotly_payload": payload,
-        "sql_used": sql_used,
-        "chat_history": json.loads(get_workspace(workspace_id).chat_history, parse_constant=lambda c: None)
-    }
+        return {
+            "plotly_payload": payload,
+            "sql_used": sql_used,
+            "chat_history": json.loads(get_workspace(workspace_id).chat_history, parse_constant=lambda c: None),
+            "narration_steps": narration_steps
+        }
 
 
 @router.post("/{workspace_id}/share")
 def get_share_link(workspace_id: str, req: ShareLinkCreate,
                    x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")):
+    """
+    Creates a secure, timed share link for a workspace.
+
+    Args:
+        workspace_id (str): The workspace identifier.
+        req (ShareLinkCreate): The payload specifying the role and expiration hours.
+        x_workspace_id (Optional[str]): Verification marker showing owner privileges.
+
+    Returns:
+        dict: An object containing the built share_url.
+    """
     role = get_role(workspace_id, x_workspace_id, None)
     if role != "owner":
         raise HTTPException(status_code=403, detail="Only owners can easily share")
@@ -136,6 +221,16 @@ def get_share_link(workspace_id: str, req: ShareLinkCreate,
 
 @router.post("/{workspace_id}/refresh")
 def refresh_dashboard_data(workspace_id: str, x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")):
+    """
+    Refreshes the data for all charts on a dashboard by re-running their underlying SQL against DuckDB.
+
+    Args:
+        workspace_id (str): The workspace identifier.
+        x_workspace_id (Optional[str]): Verification marker.
+
+    Returns:
+        dict: A success status alongside the newly populated dashboard payloads.
+    """
     role = get_role(workspace_id, x_workspace_id, None)
     if role not in ["owner", "edit"]:
         raise HTTPException(status_code=403, detail="Not authorized to refresh data")
@@ -173,6 +268,18 @@ def refresh_dashboard_data(workspace_id: str, x_workspace_id: Optional[str] = He
 def update_dashboard_layout(workspace_id: str, req: DashboardUpdate,
                             x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
                             token: Optional[str] = None):
+    """
+    Saves a modified arrangement, grid layout, or deletion of charts on the dashboard.
+
+    Args:
+        workspace_id (str): The workspace identifier.
+        req (DashboardUpdate): The payload representing the updated list of chart configurations.
+        x_workspace_id (Optional[str]): Owner marker.
+        token (Optional[str]): Token mapped to a role (must have >viewer access to edit).
+
+    Returns:
+        dict: A success status wrapper.
+    """
     role = get_role(workspace_id, x_workspace_id, token)
     if role not in ["owner", "edit"]:
         raise HTTPException(status_code=403, detail="Not authorized to edit dashboard")
@@ -189,6 +296,18 @@ def update_dashboard_layout(workspace_id: str, req: DashboardUpdate,
 @router.put("/{workspace_id}/settings")
 def update_settings(workspace_id: str, req: WorkspaceUpdate,
                     x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")):
+    """
+    Updates global workspace settings, primarily focused on modifying the underlying db_url.
+    This triggers a re-ingestion of the new DB and automatically attempts to refresh existing charts.
+
+    Args:
+        workspace_id (str): The workspace identifier.
+        req (WorkspaceUpdate): The payload containing the new db_url.
+        x_workspace_id (Optional[str]): Owner verification marker.
+
+    Returns:
+        dict: The newly re-evaluated workspace schema and dashboard state.
+    """
     role = get_role(workspace_id, x_workspace_id, None)
     if role != "owner":
         raise HTTPException(status_code=403, detail="Only owners can update settings")

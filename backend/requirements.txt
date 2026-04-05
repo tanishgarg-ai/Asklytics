@@ -10,3 +10,4 @@ langgraph
 langchain-google-genai
 PyJWT
 pymysql
+pg8000

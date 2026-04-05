@@ -21,6 +21,12 @@ app.include_router(workspaces.router)
 
 @app.get("/health")
 def health():
+    """
+    Health check endpoint for the API.
+
+    Returns:
+        dict: A dictionary containing the API status.
+    """
     return {"status": "ok"}
 
 if __name__ == "__main__":
