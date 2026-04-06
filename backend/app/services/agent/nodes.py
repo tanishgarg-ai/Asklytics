@@ -84,13 +84,16 @@ Return ONLY valid JSON matching this structure:
   "target_chart_index": <int or null> (if explain_existing, put the matching 'id' here)
 }}
 """
-    response = llm.invoke(prompt)
-    content = response.content.strip()
-    if content.startswith("```json"):
-        content = content[7:-3].strip()
-    elif content.startswith("```"):
-        content = content[3:-3].strip()
+    response = llm.invoke([prompt])
 
+    # Extract content safely
+    if isinstance(response.content, list):
+        # Join all text blocks if there are multiple, or just take the first
+        raw_text = "".join([block["text"] for block in response.content if block["type"] == "text"])
+    else:
+        raw_text = response.content
+
+    content = raw_text.strip()
     try:
         parsed = json.loads(content)
         return {
@@ -332,8 +335,17 @@ Return ONLY valid JSON matching exactly this structure:
   }}
 ]
 """
-    response = llm.invoke(prompt)
-    content = response.content.strip()
+    response = llm.invoke([prompt])
+
+    # Extract content safely
+    if isinstance(response.content, list):
+        # Join all text blocks if there are multiple, or just take the first
+        raw_text = "".join([block["text"] for block in response.content if block["type"] == "text"])
+    else:
+        raw_text = response.content
+
+    content = raw_text.strip()
+
     if content.startswith("```json"):
         content = content[7:-3].strip()
     elif content.startswith("```"):

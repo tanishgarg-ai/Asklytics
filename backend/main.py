@@ -11,7 +11,7 @@ app = FastAPI(title="Asklytics API", version="1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://asklytics.app"],
+    allow_origins=["http://localhost:5173", "https://master.d180ha7an42ujc.amplifyapp.com/"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

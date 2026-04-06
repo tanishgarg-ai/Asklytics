@@ -11,3 +11,4 @@ langchain-google-genai
 PyJWT
 pymysql
 pg8000
+psycopg2
