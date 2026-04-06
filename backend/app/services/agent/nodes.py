@@ -125,27 +125,32 @@ def intent_analyzer(state: AsklyticState) -> dict:
             "data_traces": data_traces
         })
 
-    prompt = f"""You are an intelligent BI intent analyzer.
-User Query: "{user_query}"
+    prompt = f"""You are an intelligent Business Intelligence routing agent for Asklytics.
+    Your job is to analyze a user's query and compare it against the charts currently visible on their dashboard.
 
-Existing Dashboard Charts:
-{json.dumps(dashboard_summary, indent=2)}
+    USER QUERY: "{user_query}"
 
-Determine how to handle the query.
+    EXISTING DASHBOARD CHARTS:
+    {json.dumps(dashboard_summary, indent=2)}
 
-STRICT RULES:
-- Return ONLY raw JSON
-- No explanation
-- No markdown
-- No ``` blocks
+    Determine the user's intent based strictly on the following criteria:
+    1. "explain_existing": The query asks a question or requests insights that can be directly answered by analyzing ONE of the existing charts provided above (look for matching keywords in the title or data traces).
+    2. "generate_new": The query asks for new data, new metrics, different dimensions, or a chart that is clearly NOT present in the existing dashboard list.
+    3. "follow_up": The query is a conversational greeting, a "thank you", or a general statement that does not require data analysis.
 
-Format:
-{{
-  "intent": "follow_up" | "explain_existing" | "generate_new",
-  "message": "text or null",
-  "target_chart_index": int or null
-}}
-"""
+    STRICT RULES:
+    - Return ONLY raw JSON. 
+    - Do NOT wrap the response in markdown formatting or ```json blocks.
+    - You must include a brief reasoning step before making your final decision.
+
+    JSON FORMAT:
+    {{
+      "reasoning": "Briefly explain why this intent was chosen based on comparing the query to the dashboard.",
+      "intent": "follow_up" | "explain_existing" | "generate_new",
+      "message": "Optional conversational response (e.g., 'Sure, let's look at that chart.'), or null",
+      "target_chart_index": <integer ID of the relevant chart if explain_existing, else null>
+    }}
+    """
 
     response = llm_fast.invoke([prompt])
 
@@ -364,14 +369,19 @@ def narration_generator(state: AsklyticState) -> dict:
     if isinstance(payload.get("data"), list):
         for trace in payload.get("data"):
             if isinstance(trace, dict):
-                x_vals = trace.get("x", [])[:5]
-                y_vals = trace.get("y", [])[:5]
-                data_summary.append({"x_sample": x_vals, "y_sample": y_vals})
+                is_pie = trace.get("type") == "pie"
+                x_vals = list(trace.get("labels" if is_pie else "x") or [])[:15]
+                y_vals = list(trace.get("values" if is_pie else "y") or [])[:15]
+                data_summary.append({
+                    "x_sample": x_vals, 
+                    "y_sample": y_vals, 
+                    "type": trace.get("type")
+                })
 
     prompt = f"""You are an expert data storyteller.
 User Query: "{state.get('user_query', '')}"
 
-Chart Data Snapshot (first 5 points):
+Chart Data Snapshot (selected points):
 {json.dumps(data_summary, indent=2)}
 
 Generate 3-6 structured narration steps explaining this data based on the user's query.

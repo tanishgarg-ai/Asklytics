@@ -3,6 +3,7 @@ import { useState } from 'react';
 import ShareModal from './ShareModal';
 import SettingsModal from './SettingsModal';
 import { useWorkspace } from '../hooks/useWorkspace';
+import logo from "../assets/logo.png"; // adjust path if needed
 
 export default function Navbar({ onChatToggle, onNarrate }) {
   const [showShare, setShowShare] = useState(false);
@@ -12,10 +13,14 @@ export default function Navbar({ onChatToggle, onNarrate }) {
   return (
     <>
       <nav className="h-16 flex items-center justify-between px-6 bg-white/5 backdrop-blur-md border-b border-white/10 z-10">
-        <div className="flex items-center gap-4">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center font-bold text-white shadow-lg">A</div>
-          <h1 className="text-xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">Asklytics</h1>
-        </div>
+<div className="flex items-center gap-3">
+  <img
+    src={logo}
+    alt="Asklytics Logo"
+    className="w-30 h-12 object-contain"
+  />
+  
+</div>
         <div className="flex items-center gap-3">
           <button 
             onClick={onChatToggle}

@@ -1,4 +1,4 @@
-import { X, Send, Bot, User } from 'lucide-react';
+import { X, Send, Bot, User, PlayCircle, AlertCircle } from 'lucide-react';
 import { useWorkspace } from '../hooks/useWorkspace';
 import { useAgent } from '../hooks/useAgent';
 import { useState, useRef, useEffect } from 'react';
@@ -45,6 +45,16 @@ export default function ChatPanel({ isOpen, onClose }) {
       } = res.data;
 
       if (agent_intent === 'explain_existing') {
+        if (workspace?.dashboard?.[target_chart_index]) {
+            workspace.dashboard[target_chart_index]._narration_steps = narration_steps;
+        }
+        
+        addChatMessage({
+          role: 'assistant',
+          content: agent_message || "I can explain that using an existing chart on the dashboard.",
+          action: { type: 'narrate', index: target_chart_index }
+        });
+        
         activateNarrator(narration_steps, target_chart_index);
       } else if (agent_intent === 'follow_up') {
         addChatMessage({
@@ -83,6 +93,20 @@ export default function ChatPanel({ isOpen, onClose }) {
             </div>
             <div className={`px-4 py-2 rounded-2xl max-w-[80%] text-sm ${msg.role === 'user' ? 'bg-blue-600/20 border border-blue-500/30 text-blue-100' : 'bg-white/10 border border-white/10 text-gray-200'}`}>
               <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+              {msg.action?.type === 'narrate' && msg.action.index != null && (
+                 <button 
+                   onClick={() => activateNarrator(workspace?.dashboard[msg.action.index]?._narration_steps || [], msg.action.index)}
+                   disabled={!workspace?.dashboard[msg.action.index]?._narration_steps?.length}
+                   className="mt-2 text-xs flex items-center justify-center gap-1.5 w-full bg-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-lg border border-indigo-500/30 hover:bg-indigo-500/40 transition-colors disabled:opacity-50"
+                 >
+                   <PlayCircle size={14}/> Replay Walkthrough
+                 </button>
+              )}
+              {msg.action?.type === 'narrate_expired' && (
+                 <div className="mt-2 text-xs flex items-center justify-center gap-1.5 w-full bg-red-500/10 text-red-300/70 px-3 py-1.5 rounded-lg border border-red-500/20">
+                   <AlertCircle size={14}/> Walkthrough Expired (Data Changed)
+                 </div>
+              )}
             </div>
           </div>
         ))}

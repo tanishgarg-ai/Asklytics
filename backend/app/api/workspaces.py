@@ -114,6 +114,46 @@ def load_workspace(workspace_id: str, x_workspace_id: Optional[str] = Header(Non
     }
 
 
+@router.post("/{workspace_id}/charts/{chart_index}/narrate")
+def narrate_chart_endpoint(workspace_id: str, chart_index: int,
+                  x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"), token: Optional[str] = None):
+    role = get_role(workspace_id, x_workspace_id, token)
+    if role not in ["owner", "edit"]:
+        raise HTTPException(status_code=403, detail="Upgrade to edit access to interact.")
+
+    workspace = get_workspace(workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    current_charts = json.loads(workspace.dashboard_state, parse_constant=lambda c: None)
+    if chart_index < 0 or chart_index >= len(current_charts):
+        raise HTTPException(status_code=404, detail="Chart not found")
+
+    from app.services.agent.nodes import narration_generator
+    
+    chart_title = current_charts[chart_index].get('layout', {}).get('title', {}).get('text', '')
+    
+    fake_state = {
+        "workspace_id": workspace_id,
+        "user_query": f"Please provide an analytical overview of this chart and its significant data points. Context: {chart_title}",
+        "agent_intent": "explain_existing",
+        "target_chart_index": chart_index,
+        "existing_dashboard": current_charts
+    }
+    
+    result = narration_generator(fake_state)
+    steps = result.get("narration_steps", [])
+    
+    # Cache it in the db automatically
+    if steps:
+        current_charts[chart_index]["_narration_steps"] = steps
+        update_dashboard(workspace_id, current_charts)
+
+    return {
+        "narration_steps": steps
+    }
+
+
 @router.post("/{workspace_id}/chat")
 def chat_generate(workspace_id: str, req: ChatRequest,
                   x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"), token: Optional[str] = None):
@@ -176,7 +216,13 @@ def chat_generate(workspace_id: str, req: ChatRequest,
     if agent_intent == "follow_up":
         append_chat_message(workspace_id, "assistant", agent_msg or "Can you provide more details?")
     elif agent_intent == "explain_existing":
-        append_chat_message(workspace_id, "assistant", agent_msg or "I can explain that using an existing chart on the dashboard.")
+        if target_chart_index is not None and target_chart_index < len(current_charts):
+            current_charts[target_chart_index]["_narration_steps"] = narration_steps
+            update_dashboard(workspace_id, current_charts)
+            action = {"type": "narrate", "index": target_chart_index}
+        else:
+            action = None
+        append_chat_message(workspace_id, "assistant", agent_msg or "I can explain that using an existing chart on the dashboard.", action=action)
     else:
         payload = result.get("plotly_json_payload", {})
         sql_used = result.get("generated_sql", "")
@@ -238,17 +284,44 @@ def refresh_dashboard_data(workspace_id: str, x_workspace_id: Optional[str] = He
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
+    from app.services.crypto import decrypt
+    from app.services.ingestor import ingest_from_sql_source
+    
+    db_url = decrypt(workspace.encrypted_db_url)
+    try:
+        tables, schema = ingest_from_sql_source(workspace_id, db_url)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to gracefully sync database: {e}")
+
     current_dashboard = json.loads(workspace.dashboard_state, parse_constant=lambda c: None)
+    chat_history = json.loads(workspace.chat_history, parse_constant=lambda c: None)
     payloads = []
     
-    for chart in current_dashboard:
+    for i, chart in enumerate(current_dashboard):
         sql = chart.get("_sql")
         meta = chart.get("_meta")
         if sql and meta:
             try:
                 new_payload = execute_and_format_chart(workspace_id, sql, meta)
+                
+                # Check if data shifted
+                data_changed = json.dumps(chart.get("data", []), sort_keys=True) != json.dumps(new_payload.get("data", []), sort_keys=True)
+                
                 if "grid_layout" in chart:
                     new_payload["grid_layout"] = chart["grid_layout"]
+                    
+                if "_narration_steps" in chart and not data_changed:
+                    new_payload["_narration_steps"] = chart.get("_narration_steps")
+                    
+                # Defuse old chat buttons if data shifted
+                if data_changed:
+                    for msg in chat_history:
+                        action = msg.get("action")
+                        if action and action.get("type") == "narrate" and action.get("index") == i:
+                            msg["action"]["type"] = "narrate_expired"
+                            
+                if "layout" in chart:
+                    new_payload["layout"].update(chart.get("layout", {}))
                 payloads.append(new_payload)
             except Exception:
                 payloads.append(chart)
@@ -256,11 +329,20 @@ def refresh_dashboard_data(workspace_id: str, x_workspace_id: Optional[str] = He
             payloads.append(chart)
 
     update_dashboard(workspace_id, payloads)
+    
+    from app.db import SessionLocal
+    db = SessionLocal()
+    ws = db.query(type(workspace)).filter_by(workspace_id=workspace_id).first()
+    if ws:
+        ws.chat_history = json.dumps(chat_history)
+        db.commit()
+    db.close()
 
     return {
         "status": "success",
         "dashboard": payloads,
-        "chat_history": json.loads(workspace.chat_history, parse_constant=lambda c: None)
+        "chat_history": chat_history,
+        "schema": schema
     }
 
 
@@ -330,28 +412,52 @@ def update_settings(workspace_id: str, req: WorkspaceUpdate,
     db.close()
 
     current_dashboard = json.loads(workspace.dashboard_state, parse_constant=lambda c: None)
+    chat_history = json.loads(workspace.chat_history, parse_constant=lambda c: None)
     payloads = []
     
-    for chart in current_dashboard:
+    for i, chart in enumerate(current_dashboard):
         sql = chart.get("_sql")
         meta = chart.get("_meta")
         if sql and meta:
             try:
                 new_payload = execute_and_format_chart(workspace_id, sql, meta)
+                
+                data_changed = json.dumps(chart.get("data", []), sort_keys=True) != json.dumps(new_payload.get("data", []), sort_keys=True)
+                
                 if "grid_layout" in chart:
                     new_payload["grid_layout"] = chart["grid_layout"]
+                if "_narration_steps" in chart and not data_changed:
+                    new_payload["_narration_steps"] = chart.get("_narration_steps")
+                
+                if data_changed:
+                    for msg in chat_history:
+                        action = msg.get("action")
+                        if action and action.get("type") == "narrate" and action.get("index") == i:
+                            msg["action"]["type"] = "narrate_expired"
+                            
+                if "layout" in chart:
+                    new_payload["layout"].update(chart.get("layout", {}))
+                
                 payloads.append(new_payload)
             except Exception:
                 payloads.append(chart)
         else:
             payloads.append(chart)
+            
     update_dashboard(workspace_id, payloads)
+    
+    db = SessionLocal()
+    ws = db.query(type(workspace)).filter_by(workspace_id=workspace_id).first()
+    if ws:
+        ws.chat_history = json.dumps(chat_history)
+        db.commit()
+    db.close()
 
     return {
         "workspace": {
             "schema": schema,
             "dashboard": payloads,
-            "chat_history": json.loads(get_workspace(workspace_id).chat_history, parse_constant=lambda c: None),
+            "chat_history": chat_history,
             "role": "owner"
         }
     }

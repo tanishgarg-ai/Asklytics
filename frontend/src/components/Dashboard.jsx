@@ -3,16 +3,50 @@ import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import { useWorkspace } from '../hooks/useWorkspace';
 import ChartTile from './ChartTile';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useAgent } from '../hooks/useAgent';
+import api from '../api/client';
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
 export default function Dashboard() {
-  const { workspace, updateDashboard, role } = useWorkspace();
-  const { isActive, steps, currentStepIndex, targetChartIndex } = useAgent();
+  const { workspaceId, workspace, updateDashboard, role } = useWorkspace();
+  const { isActive, steps, currentStepIndex, targetChartIndex, activateNarrator } = useAgent();
+  const [narratingChart, setNarratingChart] = useState(null);
   
   const activeStep = isActive ? steps[currentStepIndex] : null;
+
+  const handleDelete = (index) => {
+    if (role === 'view') return;
+    updateDashboard(workspace.dashboard.filter((_, i) => i !== index));
+  };
+
+  const handleNarrate = async (index) => {
+    const existingSteps = workspace.dashboard[index]?._narration_steps;
+    if (existingSteps && existingSteps.length > 0) {
+      activateNarrator(existingSteps, index);
+      return;
+    }
+    
+    if (role === 'view') return;
+    
+    setNarratingChart(index);
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const token = urlParams.get('token');
+      const url = token ? `/workspaces/${workspaceId}/charts/${index}/narrate?token=${token}` : `/workspaces/${workspaceId}/charts/${index}/narrate`;
+      const res = await api.post(url);
+      const steps = res.data.narration_steps;
+      
+      // Update local state without waiting for DB re-fetch
+      workspace.dashboard[index]._narration_steps = steps;
+      activateNarrator(steps, index);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setNarratingChart(null);
+    }
+  };
 
   const layouts = useMemo(() => {
     const lg = workspace?.dashboard?.map((chart, i) => ({
@@ -82,7 +116,14 @@ export default function Dashboard() {
           
           return (
             <div key={i.toString()} id={`chart_${i}`}>
-              <ChartTile payload={chart} highlightX={hX} isSpotlit={spotlit} />
+              <ChartTile 
+                payload={chart} 
+                highlightX={hX} 
+                isSpotlit={spotlit}
+                onDelete={role !== 'view' ? () => handleDelete(i) : undefined}
+                onNarrate={role !== 'view' || chart._narration_steps ? () => handleNarrate(i) : undefined}
+                isNarrating={narratingChart === i} 
+              />
             </div>
           );
         })}

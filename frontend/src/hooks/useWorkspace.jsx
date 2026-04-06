@@ -116,7 +116,11 @@ export const WorkspaceProvider = ({ children }) => {
       const token = urlParams.get('token');
       const url = token ? `/workspaces/${workspaceId}/refresh?token=${token}` : `/workspaces/${workspaceId}/refresh`;
       const res = await api.post(url);
-      setWorkspace(prev => ({ ...prev, dashboard: res.data.dashboard }));
+      setWorkspace(prev => ({ 
+        ...prev, 
+        dashboard: res.data.dashboard,
+        schema: res.data.schema || prev.schema 
+      }));
     } catch (err) {
       setError(err.response?.data?.detail || err.message);
       throw err;

@@ -81,7 +81,7 @@ def update_dashboard(workspace_id: str, charts: list[dict]):
         db.close()
 
 
-def append_chat_message(workspace_id: str, role: str, content: str):
+def append_chat_message(workspace_id: str, role: str, content: str, action: dict = None):
     """
     Appends a new message to the persistent chat history of the workspace.
 
@@ -89,13 +89,17 @@ def append_chat_message(workspace_id: str, role: str, content: str):
         workspace_id (str): The workspace identifier.
         role (str): The role ('user' or 'assistant').
         content (str): The text content of the message.
+        action (dict): Optional action payload (e.g. for replaying narrations).
     """
     db = SessionLocal()
     try:
         workspace = db.query(Workspace).filter(Workspace.workspace_id == workspace_id).first()
         if workspace:
             history = json.loads(workspace.chat_history)
-            history.append({"role": role, "content": content})
+            msg = {"role": role, "content": content}
+            if action:
+                msg["action"] = action
+            history.append(msg)
             workspace.chat_history = json.dumps(history)
             db.commit()
     finally:

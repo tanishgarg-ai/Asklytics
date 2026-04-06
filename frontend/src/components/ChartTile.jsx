@@ -1,8 +1,8 @@
 import Plot from 'react-plotly.js';
-import { GripHorizontal } from 'lucide-react';
+import { GripHorizontal, PlayCircle, Trash2, Loader2 } from 'lucide-react';
 import { useMemo, useState, useEffect } from 'react';
 
-export default function ChartTile({ payload, highlightX, isSpotlit }) {
+export default function ChartTile({ payload, highlightX, isSpotlit, onDelete, onNarrate, isNarrating }) {
     const [layout, setLayout] = useState(payload.layout);
     
     useEffect(() => {
@@ -68,8 +68,29 @@ export default function ChartTile({ payload, highlightX, isSpotlit }) {
     <div className="w-full h-full min-w-[200px] min-h-[200px] bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden flex flex-col shadow-xl group hover:border-white/20 transition-colors resize">
       <div className="h-8 flex shrink-0 items-center justify-between px-3 bg-white/5 border-b border-white/5">
         <span className="text-xs font-medium text-gray-300 truncate max-w-[80%]">{payload.layout?.title?.text || payload.layout?.title || 'Chart'}</span>
-        <div className="drag-handle cursor-move p-1 text-gray-500 hover:text-white transition-colors opacity-0 group-hover:opacity-100">
-          <GripHorizontal size={14} />
+        <div className="flex items-center gap-1">
+            {onNarrate && (
+                <button
+                onClick={onNarrate}
+                disabled={isNarrating}
+                className="p-1 text-gray-500 hover:text-indigo-400 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                title="Narrate Chart"
+                >
+                {isNarrating ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />}
+                </button>
+            )}
+            {onDelete && (
+                <button
+                onClick={onDelete}
+                className="p-1 text-gray-500 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                title="Delete Chart"
+                >
+                <Trash2 size={14} />
+                </button>
+            )}
+            <div className="drag-handle cursor-move p-1 text-gray-500 hover:text-white transition-colors opacity-0 group-hover:opacity-100">
+                <GripHorizontal size={14} />
+            </div>
         </div>
       </div>
       <div className="flex-1 w-full relative overflow-hidden min-h-0 min-w-0">

@@ -4,7 +4,7 @@ import Navbar from './components/Navbar';
 import SchemaExplorer from './components/SchemaExplorer';
 import ChatPanel from './components/ChatPanel';
 import NarrationOverlay from './components/NarrationOverlay';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAgent } from './hooks/useAgent';
 
 function AppContent() {
@@ -12,6 +12,12 @@ function AppContent() {
   const { isActive, steps, exitNarrator } = useAgent();
   const [dbUrl, setDbUrl] = useState('');
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  useEffect(() => {
+    if (isActive) {
+      setIsChatOpen(false);
+    }
+  }, [isActive]);
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center text-white">Loading your workspace...</div>;
