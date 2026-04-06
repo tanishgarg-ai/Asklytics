@@ -130,35 +130,24 @@ def intent_analyzer(state: AsklyticState) -> dict:
 
     USER QUERY: "{user_query}"
 
-    EXISTING DASHBOARD CHARTS:
-    {json.dumps(dashboard_summary, indent=2)}
+Determine how to handle the query.
+Return ONLY valid JSON matching this structure:
+{{
+  "intent": "follow_up" | "explain_existing" | "generate_new",
+  "message": "If follow_up, write follow-up question here. If explain_existing, write a brief intro. If generate_new, leave blank.",
+  "target_chart_index": <int or null> (if explain_existing, put the matching 'id' here)
+}}
+"""
+    response = llm.invoke([prompt])
 
-    Determine the user's intent based strictly on the following criteria:
-    1. "explain_existing": The query asks a question or requests insights that can be directly answered by analyzing ONE of the existing charts provided above (look for matching keywords in the title or data traces).
-    2. "generate_new": The query asks for new data, new metrics, different dimensions, or a chart that is clearly NOT present in the existing dashboard list.
-    3. "follow_up": The query is a conversational greeting, a "thank you", or a general statement that does not require data analysis.
+    # Extract content safely
+    if isinstance(response.content, list):
+        # Join all text blocks if there are multiple, or just take the first
+        raw_text = "".join([block["text"] for block in response.content if block["type"] == "text"])
+    else:
+        raw_text = response.content
 
-    STRICT RULES:
-    - Return ONLY raw JSON. 
-    - Do NOT wrap the response in markdown formatting or ```json blocks.
-    - You must include a brief reasoning step before making your final decision.
-
-    JSON FORMAT:
-    {{
-      "reasoning": "Briefly explain why this intent was chosen based on comparing the query to the dashboard.",
-      "intent": "follow_up" | "explain_existing" | "generate_new",
-      "message": "Optional conversational response (e.g., 'Sure, let's look at that chart.'), or null",
-      "target_chart_index": <integer ID of the relevant chart if explain_existing, else null>
-    }}
-    """
-
-    response = llm_fast.invoke([prompt])
-
-    # Normalize response
-    content = response.content
-    if not isinstance(content, str):
-        content = "".join(b.get("text", "") for b in content if isinstance(b, dict))
-
+    content = raw_text.strip()
     try:
         parsed = extract_json(content)
         return {
@@ -403,11 +392,16 @@ Return ONLY valid JSON matching exactly this structure:
   }}
 ]
 """
-    # llm_narrator: creative + structured JSON — Groq 70b is fast and handles this well
-    response = llm_narrator.invoke([prompt])
-    content = response.content if isinstance(response.content, str) else \
-        "".join([b.get("text", "") for b in response.content if isinstance(b, dict)])
-    content = content.strip()
+    response = llm.invoke([prompt])
+
+    # Extract content safely
+    if isinstance(response.content, list):
+        # Join all text blocks if there are multiple, or just take the first
+        raw_text = "".join([block["text"] for block in response.content if block["type"] == "text"])
+    else:
+        raw_text = response.content
+
+    content = raw_text.strip()
 
     if content.startswith("```json"):
         content = content[7:-3].strip()

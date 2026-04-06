@@ -3,16 +3,31 @@ from datetime import datetime, timezone
 from sqlalchemy import create_engine, Column, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+# Fetch from environment, fallback to sqlite for extreme local testing edge-cases
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./asklytics.db")
 
-# For production/RDS, we want to ensure stale connections are handled correctly.
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+connect_args = {}
 
+# SQLite requires a specific argument to prevent threading errors.
+# Postgres (psycopg2) does not need this, but might need SSL arguments
+# if they aren't parsed directly from the URL.
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
+elif DATABASE_URL.startswith("postgres"):
+    # If the URL string params (?sslmode=...) fail on AWS, uncomment below:
+    # connect_args = {
+    #     "sslmode": "verify-full",
+    #     "sslrootcert": "./global-bundle.pem"
+    # }
+    pass
+
+# Create the SQLAlchemy Engine
 engine = create_engine(
-    DATABASE_URL, 
+    DATABASE_URL,
     connect_args=connect_args,
-    pool_pre_ping=True  # Important for RDS to recover from idle connection drops
+    pool_pre_ping=True  # CRITICAL FOR AWS RDS: Recovers gracefully if RDS drops an idle connection
 )
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
@@ -38,7 +53,7 @@ class ShareLink(Base):
     """
     SQLAlchemy model representing an invitation or access token.
 
-    Manages timed access to workspaces by issuing tokens with specific roles 
+    Manages timed access to workspaces by issuing tokens with specific roles
     and expiration bounds.
     """
     __tablename__ = "share_links"
@@ -50,4 +65,12 @@ class ShareLink(Base):
     expires_at = Column(DateTime, nullable=False)
 
 
-Base.metadata.create_all(bind=engine)
+# 🚀 AWS / FRESH START MAGIC LINE 🚀
+# Because you are starting fresh and not using Alembic migrations yet,
+# this line tells SQLAlchemy to inspect the classes above and automatically
+# create the empty 'workspaces' and 'share_links' tables in your AWS Postgres DB.
+try:
+    Base.metadata.create_all(bind=engine)
+    print("Database tables validated/created successfully.")
+except Exception as e:
+    print(f"Failed to create tables: {e}")
