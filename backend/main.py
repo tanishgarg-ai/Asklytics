@@ -10,12 +10,19 @@ from app.api import workspaces
 
 app = FastAPI(title="Asklytics API", version="1.0")
 
+# CORS setup
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+if allowed_origins_env:
+    origins = [o.strip() for o in allowed_origins_env.split(",")]
+else:
+    origins = [
+        "https://master.d180ha7an42ujc.amplifyapp.com",
+        "http://localhost:5173",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://master.d180ha7an42ujc.amplifyapp.com",
-        "http://localhost:5173",  # optional for local dev
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
