@@ -1,4 +1,5 @@
 import json
+import os
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from typing import Optional
 from app.models.workspace import WorkspaceCreate, WorkspaceUpdate, DashboardUpdate
@@ -258,9 +259,10 @@ def get_share_link(workspace_id: str, req: ShareLinkCreate,
     if role != "owner":
         raise HTTPException(status_code=403, detail="Only owners can easily share")
 
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
     token = create_share_link(workspace_id, req.role, req.expires_in_hours)
     return {
-        "share_url": f"https://asklytics.app/w/{workspace_id}?token={token}"
+        "share_url": f"{frontend_url}/w/{workspace_id}?token={token}"
     }
 
 
