@@ -1,6 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,12 +12,21 @@ app = FastAPI(title="Asklytics API", version="1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://master.d180ha7an42ujc.amplifyapp.com/"],
+    allow_origins=[
+        "https://master.d180ha7an42ujc.amplifyapp.com",
+        "http://localhost:5173",  # optional for local dev
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ✅ Explicit preflight handler (fixes OPTIONS 400 issue)
+@app.options("/{rest_of_path:path}")
+async def preflight_handler():
+    return Response(status_code=200)
+
+# ✅ Routes
 app.include_router(workspaces.router)
 
 @app.get("/health")
