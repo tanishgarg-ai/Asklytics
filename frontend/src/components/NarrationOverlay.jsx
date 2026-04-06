@@ -11,6 +11,7 @@ export default function NarrationOverlay({ steps, isPlaying, onClose }) {
   const timeoutRef = useRef(null);
 
   // Initialize synth voices if needed
+  
   useEffect(() => {
     window.speechSynthesis.getVoices();
   }, []);
