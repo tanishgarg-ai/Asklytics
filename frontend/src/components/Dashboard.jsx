@@ -4,11 +4,15 @@ import 'react-resizable/css/styles.css';
 import { useWorkspace } from '../hooks/useWorkspace';
 import ChartTile from './ChartTile';
 import { useMemo } from 'react';
+import { useAgent } from '../hooks/useAgent';
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
 export default function Dashboard() {
   const { workspace, updateDashboard, role } = useWorkspace();
+  const { isActive, steps, currentStepIndex, targetChartIndex } = useAgent();
+  
+  const activeStep = isActive ? steps[currentStepIndex] : null;
 
   const layouts = useMemo(() => {
     const lg = workspace?.dashboard?.map((chart, i) => ({
@@ -71,11 +75,17 @@ export default function Dashboard() {
         isDraggable={role === 'owner' || role === 'edit'}
         isResizable={role === 'owner' || role === 'edit'}
       >
-        {workspace.dashboard.map((chart, i) => (
-          <div key={i.toString()} id={`chart_${i}`}>
-            <ChartTile payload={chart} />
-          </div>
-        ))}
+        {workspace.dashboard.map((chart, i) => {
+          const isTarget = activeStep?.target_id === `chart_${i}`;
+          const hX = activeStep?.type === 'datapoint' && isTarget ? activeStep.x : null;
+          const spotlit = isActive && targetChartIndex === i;
+          
+          return (
+            <div key={i.toString()} id={`chart_${i}`}>
+              <ChartTile payload={chart} highlightX={hX} isSpotlit={spotlit} />
+            </div>
+          );
+        })}
       </ResponsiveGridLayout>
     </div>
   );

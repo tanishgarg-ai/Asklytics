@@ -1,10 +1,12 @@
 import { X, Send, Bot, User } from 'lucide-react';
 import { useWorkspace } from '../hooks/useWorkspace';
+import { useAgent } from '../hooks/useAgent';
 import { useState, useRef, useEffect } from 'react';
 import api from '../api/client';
 
 export default function ChatPanel({ isOpen, onClose }) {
   const { workspaceId, workspace, role, addChart, addChatMessage } = useWorkspace();
+  const { activateNarrator } = useAgent();
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
@@ -27,12 +29,35 @@ export default function ChatPanel({ isOpen, onClose }) {
     setLoading(true);
 
     try {
-      const res = await api.post(`/workspaces/${workspaceId}/chat`, { query: userMsg });
-      addChart(res.data.plotly_payload);
-      addChatMessage({ 
-          role: 'assistant', 
-          content: `I've added the chart to your dashboard.\n\n\`\`\`sql\n${res.data.sql_used}\n\`\`\`` 
+      const existingDashboard = workspace?.dashboard || [];
+      const res = await api.post(`/workspaces/${workspaceId}/chat`, { 
+        query: userMsg,
+        existing_dashboard: existingDashboard
       });
+      
+      const { 
+        agent_intent, 
+        narration_steps, 
+        target_chart_index, 
+        plotly_payload, 
+        sql_used, 
+        agent_message 
+      } = res.data;
+
+      if (agent_intent === 'explain_existing') {
+        activateNarrator(narration_steps, target_chart_index);
+      } else if (agent_intent === 'follow_up') {
+        addChatMessage({
+          role: 'assistant',
+          content: agent_message || "Can you provide more details?"
+        });
+      } else {
+        addChart(plotly_payload);
+        addChatMessage({ 
+            role: 'assistant', 
+            content: `I've added the chart to your dashboard.\n\n\`\`\`sql\n${sql_used}\n\`\`\`` 
+        });
+      }
     } catch (err) {
       addChatMessage({ 
           role: 'assistant', 

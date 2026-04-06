@@ -10,6 +10,11 @@ from app.services.agent.state import AsklyticState
 
 # ---- Helper: Clean dataframe (IMPORTANT) ----
 def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    # Drop unwanted Postgres auto-generated columns if they exist
+    cols_to_drop = [c for c in df.columns if c in ("_cast", "_cast_dna")]
+    if cols_to_drop:
+        df = df.drop(columns=cols_to_drop)
+
     # Replace NaN with None (fix JSON issue later)
     df = df.where(pd.notnull(df), None)
 
@@ -40,6 +45,8 @@ def ingest_from_sql_source(workspace_id: str, connection_url: str) -> tuple[list
         meta.reflect(bind=source_engine)
 
         for table_name, table in meta.tables.items():
+            if table_name in ("_cast", "_cast_dna"):
+                continue
             try:
                 # Load table into pandas
                 df = pd.read_sql_table(table_name, conn)

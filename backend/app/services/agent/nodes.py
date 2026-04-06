@@ -1,15 +1,56 @@
 import os
 import json
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from app.services.data_engine import get_schema, execute_query, execute_and_format_chart, get_or_create_session
 from app.services.agent.state import AsklyticState
 
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3-flash-preview",
+# --- LLM Pool ---
+# Heavy lifting: SQL generation + chart config from schema
+llm_sql = ChatGoogleGenerativeAI(
+    # model="gemini-3-flash-preview",
+    model="gemini-3.1-flash-lite-preview",
     api_key=os.getenv("GEMINI_API_KEY"),
     temperature=0.2,
-    max_retries=6
+    max_retries=3
 )
+
+# Fast classification: intent detection (3-way JSON output, no reasoning needed)
+llm_fast = ChatGroq(
+    model="llama-3.1-8b-instant",
+    api_key=os.getenv("GROQ_API_KEY"),
+    temperature=0.0,
+    max_retries=3
+)
+
+# Narrative generation: creative + structured JSON, Groq is fast enough here
+llm_narrator = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    api_key=os.getenv("GROQ_API_KEY"),
+    temperature=0.3,
+    max_retries=3
+)
+
+# Keep a default alias for any node not yet migrated
+llm = llm_sql
+
+
+def _truncate_schema(schema: dict, max_tables: int = 5, max_cols_per_table: int = 20) -> dict:
+    """
+    Trims the schema dict before sending to the SQL model.
+    Cuts down token usage significantly on wide or multi-table databases.
+    """
+    truncated = {}
+    for i, (table, cols) in enumerate(schema.items()):
+        if i >= max_tables:
+            break
+        if isinstance(cols, list):
+            truncated[table] = cols[:max_cols_per_table]
+        elif isinstance(cols, dict):
+            truncated[table] = dict(list(cols.items())[:max_cols_per_table])
+        else:
+            truncated[table] = cols
+    return truncated
 
 
 def schema_retriever(state: AsklyticState) -> dict:
@@ -84,13 +125,15 @@ Return ONLY valid JSON matching this structure:
   "target_chart_index": <int or null> (if explain_existing, put the matching 'id' here)
 }}
 """
-    response = llm.invoke(prompt)
-    content = response.content.strip()
+    # llm_fast: simple 3-way classification, no reasoning needed
+    response = llm_fast.invoke([prompt])
+    content = response.content if isinstance(response.content, str) else \
+        "".join([b.get("text", "") for b in response.content if isinstance(b, dict)])
+    content = content.strip()
     if content.startswith("```json"):
         content = content[7:-3].strip()
     elif content.startswith("```"):
         content = content[3:-3].strip()
-
     try:
         parsed = json.loads(content)
         return {
@@ -118,6 +161,8 @@ def query_generator(state: AsklyticState) -> dict:
     is_dashboard_init = state.get("is_dashboard_init", False)
     feedback = state.get("reflection_feedback")
 
+    # Truncate schema to reduce token cost — wide DBs can easily blow the context
+    schema = _truncate_schema(schema)
     schema_str = json.dumps(schema, indent=2)
 
     structure = """{
@@ -178,16 +223,11 @@ The object must match this exact structure:
 {structure}
 """
 
-    response = llm.invoke([prompt])
-
-    # Extract content safely
-    if isinstance(response.content, list):
-        # Join all text blocks if there are multiple, or just take the first
-        raw_text = "".join([block["text"] for block in response.content if block["type"] == "text"])
-    else:
-        raw_text = response.content
-
-    content = raw_text.strip()
+    # llm_sql: SQL generation needs the most capable model
+    response = llm_sql.invoke([prompt])
+    content = response.content if isinstance(response.content, str) else \
+        "".join([b.get("text", "") for b in response.content if isinstance(b, dict)])
+    content = content.strip()
 
     if content.startswith("```json"):
         content = content[7:-3].strip()
@@ -332,8 +372,12 @@ Return ONLY valid JSON matching exactly this structure:
   }}
 ]
 """
-    response = llm.invoke(prompt)
-    content = response.content.strip()
+    # llm_narrator: creative + structured JSON — Groq 70b is fast and handles this well
+    response = llm_narrator.invoke([prompt])
+    content = response.content if isinstance(response.content, str) else \
+        "".join([b.get("text", "") for b in response.content if isinstance(b, dict)])
+    content = content.strip()
+
     if content.startswith("```json"):
         content = content[7:-3].strip()
     elif content.startswith("```"):

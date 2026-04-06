@@ -2,7 +2,7 @@ import Plot from 'react-plotly.js';
 import { GripHorizontal } from 'lucide-react';
 import { useMemo, useState, useEffect } from 'react';
 
-export default function ChartTile({ payload }) {
+export default function ChartTile({ payload, highlightX, isSpotlit }) {
     const [layout, setLayout] = useState(payload.layout);
     
     useEffect(() => {
@@ -32,6 +32,38 @@ export default function ChartTile({ payload }) {
       });
     }, [payload.layout, payload.data]);
 
+    const highlightedData = useMemo(() => {
+        if (!payload.data || highlightX == null) return payload.data;
+        
+        return payload.data.map(trace => {
+            if (trace.type === 'pie' || !trace.x) return trace;
+            
+            const newMarker = { ...(trace.marker || {}) };
+            const colors = [];
+            const opacities = [];
+            
+            for (let i = 0; i < trace.x.length; i++) {
+                // loose equality to mix strings/numbers like "2023" == 2023
+                // eslint-disable-next-line eqeqeq
+                if (trace.x[i] == highlightX) {
+                    colors.push('#6366f1');
+                    opacities.push(1.0);
+                } else {
+                    colors.push('#94a3b8');
+                    opacities.push(0.25);
+                }
+            }
+            
+            newMarker.color = colors;
+            newMarker.opacity = opacities;
+            
+            return {
+                ...trace,
+                marker: newMarker
+            };
+        });
+    }, [payload.data, highlightX]);
+
   return (
     <div className="w-full h-full min-w-[200px] min-h-[200px] bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden flex flex-col shadow-xl group hover:border-white/20 transition-colors resize">
       <div className="h-8 flex shrink-0 items-center justify-between px-3 bg-white/5 border-b border-white/5">
@@ -43,7 +75,7 @@ export default function ChartTile({ payload }) {
       <div className="flex-1 w-full relative overflow-hidden min-h-0 min-w-0">
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
           <Plot
-            data={payload.data}
+            data={highlightedData}
             layout={layout}
             useResizeHandler={true}
             style={{ width: '100%', height: '100%' }}

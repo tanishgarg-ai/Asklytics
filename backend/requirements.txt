@@ -8,6 +8,8 @@ cryptography
 python-dotenv
 langgraph
 langchain-google-genai
+langchain-groq
 PyJWT
 pymysql
 pg8000
+psycopg2

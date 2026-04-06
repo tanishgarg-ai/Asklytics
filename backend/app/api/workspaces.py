@@ -149,7 +149,7 @@ def chat_generate(workspace_id: str, req: ChatRequest,
         "user_query": req.query,
         "is_dashboard_init": False,
         "retry_count": 0,
-        "existing_dashboard": current_charts
+        "existing_dashboard": req.existing_dashboard
     }
     result = agent_executor.invoke(initial_state)
 
@@ -158,26 +158,25 @@ def chat_generate(workspace_id: str, req: ChatRequest,
         append_chat_message(workspace_id, "assistant", f"Sorry, I encountered an error: {error_msg}")
         raise HTTPException(status_code=500, detail=error_msg)
 
-    intent = result.get("agent_intent", "generate_new")
-    agent_msg = result.get("agent_message", "")
+    agent_intent = result.get("agent_intent", "generate_new")
     narration_steps = result.get("narration_steps", [])
+    target_chart_index = result.get("target_chart_index")
+    agent_msg = result.get("agent_message", "")
 
-    if intent == "follow_up":
+    resp = {
+        "agent_intent": agent_intent,
+        "narration_steps": narration_steps,
+        "plotly_payload": None,
+        "sql_used": "",
+        "target_chart_index": target_chart_index,
+        "agent_message": agent_msg,
+        "chat_history": []
+    }
+
+    if agent_intent == "follow_up":
         append_chat_message(workspace_id, "assistant", agent_msg or "Can you provide more details?")
-        return {
-            "plotly_payload": None,
-            "sql_used": "",
-            "chat_history": json.loads(get_workspace(workspace_id).chat_history, parse_constant=lambda c: None),
-            "narration_steps": []
-        }
-    elif intent == "explain_existing":
+    elif agent_intent == "explain_existing":
         append_chat_message(workspace_id, "assistant", agent_msg or "I can explain that using an existing chart on the dashboard.")
-        return {
-            "plotly_payload": None,
-            "sql_used": "",
-            "chat_history": json.loads(get_workspace(workspace_id).chat_history, parse_constant=lambda c: None),
-            "narration_steps": narration_steps
-        }
     else:
         payload = result.get("plotly_json_payload", {})
         sql_used = result.get("generated_sql", "")
@@ -188,12 +187,11 @@ def chat_generate(workspace_id: str, req: ChatRequest,
         append_chat_message(workspace_id, "assistant",
                             f"I've added the chart to your dashboard. Query used:\n```sql\n{sql_used}\n```")
 
-        return {
-            "plotly_payload": payload,
-            "sql_used": sql_used,
-            "chat_history": json.loads(get_workspace(workspace_id).chat_history, parse_constant=lambda c: None),
-            "narration_steps": narration_steps
-        }
+        resp["plotly_payload"] = payload
+        resp["sql_used"] = sql_used
+
+    resp["chat_history"] = json.loads(get_workspace(workspace_id).chat_history, parse_constant=lambda c: None)
+    return resp
 
 
 @router.post("/{workspace_id}/share")
