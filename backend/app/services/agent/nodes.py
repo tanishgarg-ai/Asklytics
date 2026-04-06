@@ -1,21 +1,19 @@
 import os
 import json
+import re
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from app.services.data_engine import get_schema, execute_query, execute_and_format_chart, get_or_create_session
 from app.services.agent.state import AsklyticState
 
 # --- LLM Pool ---
-# Heavy lifting: SQL generation + chart config from schema
 llm_sql = ChatGoogleGenerativeAI(
-    # model="gemini-3-flash-preview",
     model="gemini-3.1-flash-lite-preview",
     api_key=os.getenv("GEMINI_API_KEY"),
     temperature=0.2,
     max_retries=3
 )
 
-# Fast classification: intent detection (3-way JSON output, no reasoning needed)
 llm_fast = ChatGroq(
     model="llama-3.1-8b-instant",
     api_key=os.getenv("GROQ_API_KEY"),
@@ -23,7 +21,6 @@ llm_fast = ChatGroq(
     max_retries=3
 )
 
-# Narrative generation: creative + structured JSON, Groq is fast enough here
 llm_narrator = ChatGroq(
     model="llama-3.3-70b-versatile",
     api_key=os.getenv("GROQ_API_KEY"),
@@ -31,7 +28,6 @@ llm_narrator = ChatGroq(
     max_retries=3
 )
 
-# Keep a default alias for any node not yet migrated
 llm = llm_sql
 
 
@@ -53,6 +49,25 @@ def _truncate_schema(schema: dict, max_tables: int = 5, max_cols_per_table: int 
     return truncated
 
 
+# --- Helper: Robust JSON extraction ---
+def extract_json(content: str) -> dict | list:
+    """Extracts JSON safely from messy LLM outputs."""
+    content = content.strip()
+
+    # Try markdown JSON block
+    match = re.search(r"```json\s*(\{.*?\}|\[.*?\])\s*```", content, re.DOTALL)
+    if match:
+        content = match.group(1)
+    else:
+        # fallback: first JSON object/array
+        match = re.search(r"(\{.*\}|\[.*\])", content, re.DOTALL)
+        if match:
+            content = match.group(1)
+
+    return json.loads(content)
+
+
+# --- Schema Retriever ---
 def schema_retriever(state: AsklyticState) -> dict:
     """
     Retrieves the database schema for the workspace.
@@ -67,6 +82,7 @@ def schema_retriever(state: AsklyticState) -> dict:
     return {"dataset_schema": schema}
 
 
+# --- Intent Analyzer (FIXED) ---
 def intent_analyzer(state: AsklyticState) -> dict:
     """
     Analyzes the user's query against the existing dashboard to determine the next action intent.
@@ -94,9 +110,7 @@ def intent_analyzer(state: AsklyticState) -> dict:
         if not isinstance(c, dict):
             continue
 
-        layout = c.get("layout", {})
-        if not isinstance(layout, dict):
-            layout = {}
+        layout = c.get("layout", {}) if isinstance(c.get("layout"), dict) else {}
 
         title_obj = layout.get("title", "Untitled")
         title_text = title_obj.get("text", "Untitled") if isinstance(title_obj, dict) else str(title_obj)
@@ -118,30 +132,37 @@ Existing Dashboard Charts:
 {json.dumps(dashboard_summary, indent=2)}
 
 Determine how to handle the query.
-Return ONLY valid JSON matching this structure:
+
+STRICT RULES:
+- Return ONLY raw JSON
+- No explanation
+- No markdown
+- No ``` blocks
+
+Format:
 {{
   "intent": "follow_up" | "explain_existing" | "generate_new",
-  "message": "If follow_up, write follow-up question here. If explain_existing, write a brief intro. If generate_new, leave blank.",
-  "target_chart_index": <int or null> (if explain_existing, put the matching 'id' here)
+  "message": "text or null",
+  "target_chart_index": int or null
 }}
 """
-    # llm_fast: simple 3-way classification, no reasoning needed
+
     response = llm_fast.invoke([prompt])
-    content = response.content if isinstance(response.content, str) else \
-        "".join([b.get("text", "") for b in response.content if isinstance(b, dict)])
-    content = content.strip()
-    if content.startswith("```json"):
-        content = content[7:-3].strip()
-    elif content.startswith("```"):
-        content = content[3:-3].strip()
+
+    # Normalize response
+    content = response.content
+    if not isinstance(content, str):
+        content = "".join(b.get("text", "") for b in content if isinstance(b, dict))
+
     try:
-        parsed = json.loads(content)
+        parsed = extract_json(content)
         return {
             "agent_intent": parsed.get("intent", "generate_new"),
             "agent_message": parsed.get("message"),
             "target_chart_index": parsed.get("target_chart_index")
         }
-    except Exception:
+    except Exception as e:
+        print("Intent parsing failed:", content)
         return {"agent_intent": "generate_new"}
 
 

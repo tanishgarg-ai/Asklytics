@@ -33,6 +33,8 @@ def get_schema(workspace_id: str) -> dict[str, list[dict]]:
     
     schema = {}
     for table_name in tables:
+        if table_name.endswith("_cast") or table_name.endswith("_cast_dna"):
+            continue
         cols_result = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
         schema[table_name] = [
             {"column": col[1], "type": col[2]} for col in cols_result

@@ -24,14 +24,6 @@ export default function Navbar({ onChatToggle, onNarrate }) {
           >
             <MessageSquare size={20} />
           </button>
-          
-          <button 
-            onClick={onNarrate}
-            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 rounded-lg transition-colors border border-indigo-500/30"
-            title="Explain Dashboard"
-          >
-            <PlayCircle size={16} /> Narrate
-          </button>
 
           {(role === 'owner' || role === 'edit') && (
             <button 
