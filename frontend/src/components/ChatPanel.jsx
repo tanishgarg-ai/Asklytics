@@ -1,4 +1,4 @@
-import { X, Send, Bot, User, PlayCircle, AlertCircle } from 'lucide-react';
+import { X, Send, Bot, User, PlayCircle, AlertCircle, Mic, MicOff } from 'lucide-react';
 import { useWorkspace } from '../hooks/useWorkspace';
 import { useAgent } from '../hooks/useAgent';
 import { useState, useRef, useEffect } from 'react';
@@ -9,7 +9,57 @@ export default function ChatPanel({ isOpen, onClose }) {
   const { activateNarrator } = useAgent();
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef(null);
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      
+      recognitionRef.current.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setInput((prev) => prev ? prev + ' ' + transcript : transcript);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onerror = (event) => {
+        console.error("Speech recognition error", event.error);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+    }
+    
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
+  }, []);
+
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    } else {
+      if (!recognitionRef.current) {
+        alert("Your browser does not support speech recognition.");
+        return;
+      }
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (err) {
+        console.error("Failed to start listening:", err);
+      }
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -131,15 +181,28 @@ export default function ChatPanel({ isOpen, onClose }) {
             onChange={e => setInput(e.target.value)}
             disabled={role === 'view' || loading}
             placeholder={role === 'view' ? "Upgrade to edit access to interact." : "Ask for a new chart..."}
-            className="w-full bg-white/5 border border-white/10 rounded-full px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed pr-10"
+            className="w-full bg-white/5 border border-white/10 rounded-full px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed pr-20"
           />
-          <button 
-            type="submit" 
-            disabled={role === 'view' || loading || !input.trim()}
-            className="absolute right-1 top-1 p-1.5 bg-blue-600 hover:bg-blue-500 rounded-full text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Send size={14} />
-          </button>
+          <div className="absolute right-1 top-1 flex gap-1 items-center">
+            <button
+              type="button"
+              onClick={toggleListening}
+              disabled={role === 'view' || loading}
+              className={`p-1.5 rounded-full text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                isListening ? 'bg-red-500 hover:bg-red-400 animate-pulse' : 'bg-white/10 hover:bg-white/20'
+              }`}
+              title="Voice Input"
+            >
+              {isListening ? <MicOff size={14} /> : <Mic size={14} />}
+            </button>
+            <button 
+              type="submit" 
+              disabled={role === 'view' || loading || !input.trim()}
+              className="p-1.5 bg-blue-600 hover:bg-blue-500 rounded-full text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Send size={14} />
+            </button>
+          </div>
         </form>
       </div>
     </aside>

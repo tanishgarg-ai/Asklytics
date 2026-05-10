@@ -28,13 +28,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # ✅ Explicit preflight handler (fixes OPTIONS 400 issue)
 @app.options("/{rest_of_path:path}")
 async def preflight_handler():
     return Response(status_code=200)
 
+
 # ✅ Routes
 app.include_router(workspaces.router)
+
 
 @app.get("/health")
 def health():
@@ -46,6 +49,8 @@ def health():
     """
     return {"status": "ok"}
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
